@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B-Tree and B+ Tree Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #tree-container {
+            width: 800px;
+            height: 400px;
+            border: 1px solid #ccc;
+            margin-top: 20px;
+        }
+        .node {
+            display: inline-block;
+            border: 1px solid #000;
+            padding: 5px;
+            margin: 2px;
+        }
+        .leaf {
+            background-color: #e0f7fa;
+        }
+        .internal {
+            background-color: #fff9c4;
+        }
+    </style>
+</head>
+<body>
+    <h1>B-Tree and B+ Tree Visualization</h1>
+    <div>
+        <label for="tree-type">Tree Type:</label>
+        <select id="tree-type">
+            <option value="btree">B-Tree</option>
+            <option value="bplustree">B+ Tree</option>
+        </select>
+        <label for="order">Order:</label>
+        <input type="number" id="order" min="2" value="3">
+        <button onclick="initializeTree()">Initialize Tree</button>
+    </div>
+    <div>
+        <input type="number" id="insert-value" placeholder="Value to insert">
+        <button onclick="insertValue()">Insert</button>
+    </div>
+    <div id="tree-container"></div>
+
+    <script>
+        class BTreeNode {
+            constructor(isLeaf = false) {
+                this.keys = [];
+                this.children = [];
+                this.isLeaf = isLeaf;
+            }
+        }
+
+        class BTree {
+            constructor(order) {
+                this.root = new BTreeNode(true);
+                this.order = order;
+            }
+
+            insert(key) {
+                if (this.root.keys.length === (2 * this.order - 1)) {
+                    let newRoot = new BTreeNode(false);
+                    newRoot.children.push(this.root);
+                    this.splitChild(newRoot, 0);
+                    this.root = newRoot;
+                }
+                this.insertNonFull(this.root, key);
+            }
+
+            insertNonFull(node, key) {
+                let i = node.keys.length - 1;
+                if (node.isLeaf) {
+                    node.keys.push(0);
+                    while (i >= 0 && key < node.keys[i]) {
+                        node.keys[i + 1] = node.keys[i];
+                        i--;
+                    }
+                    node.keys[i + 1] = key;
+                } else {
+                    while (i >= 0 && key < node.keys[i]) {
+                        i--;
+                    }
+                    i++;
+                    if (node.children[i].keys.length === (2 * this.order - 1)) {
+                        this.splitChild(node, i);
+                        if (key > node.keys[i]) {
+                            i++;
+                        }
+                    }
+                    this.insertNonFull(node.children[i], key);
+                }
+            }
+
+            splitChild(parent, index) {
+                let newNode = new BTreeNode(parent.children[index].isLeaf);
+                let splitNode = parent.children[index];
+                parent.keys.splice(index, 0, splitNode.keys[this.order - 1]);
+                parent.children.splice(index + 1, 0, newNode);
+                newNode.keys = splitNode.keys.splice(this.order, this.order - 1);
+                if (!splitNode.isLeaf) {
+                    newNode.children = splitNode.children.splice(this.order, this.order);
+                }
+            }
+        }
+
+        let tree;
+        let treeType;
+
+        function initializeTree() {
+            const order = parseInt(document.getElementById('order').value);
+            treeType = document.getElementById('tree-type').value;
+            tree = new BTree(order);
+            renderTree();
+        }
+
+        function insertValue() {
+            const value = parseInt(document.getElementById('insert-value').value);
+            if (!isNaN(value)) {
+                tree.insert(value);
+                renderTree();
+            }
+        }
+
+        function renderTree() {
+            const container = document.getElementById('tree-container');
+            container.innerHTML = '';
+            renderNode(tree.root, container, 0);
+        }
+
+        function renderNode(node, parent, level) {
+            const nodeElement = document.createElement('div');
+            nodeElement.className = `node ${node.isLeaf ? 'leaf' : 'internal'}`;
+            nodeElement.style.marginLeft = `${level * 20}px`;
+            nodeElement.textContent = node.keys.join(', ');
+            parent.appendChild(nodeElement);
+
+            if (!node.isLeaf) {
+                node.children.forEach(child => renderNode(child, parent, level + 1));
+            }
+        }
+
+        initializeTree();
+    </script>
+</body>
+</html>
