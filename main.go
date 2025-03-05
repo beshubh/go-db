@@ -8,10 +8,6 @@ import (
 	"time"
 )
 
-func main() {
-	fmt.Println("hello world!")
-}
-
 func SaveData1(path string, data []byte) error {
 	fp, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
@@ -124,6 +120,10 @@ func (node BNode) getOffset(idx uint16) uint16 {
 	return binary.LittleEndian.Uint16(node[pos:])
 }
 
+func (node BNode) setOffset(idx uint16, val uint16) {
+	binary.LittleEndian.PutUint16(node[4+node.nkeys()*8+2*(idx-1):], val)
+}
+
 func (node BNode) kvPos(idx uint16) uint16 {
 	if idx > node.nkeys() {
 		panic("invalid index")
@@ -148,4 +148,56 @@ func (node BNode) getVal(idx uint16) []byte {
 	klen := binary.LittleEndian.Uint16(node[pos:])
 	vlen := binary.LittleEndian.Uint16(node[pos+2:])
 	return node[pos+4+klen:][:vlen]
+}
+
+// node size in bytes
+func (node BNode) nbytes() uint16 {
+	return node.kvPos(node.nkeys())
+}
+
+func nodeAppendKV(new BNode, idx uint16, ptr uint64, key []byte, val []byte) {
+	new.setPtr(idx, ptr)
+
+	pos := new.kvPos(idx)
+	binary.LittleEndian.PutUint16(new[pos+0:], uint16(len(key)))
+	binary.LittleEndian.PutUint16(new[pos+2:], uint16(len(val)))
+	copy(new[pos+4:], key)
+	copy(new[pos+4+uint16(len(key)):], val)
+	new.setOffset(idx+1, new.getOffset(idx)+4+uint16((len(key)+len(val))))
+}
+
+func nodeAppendRange(new BNode, old BNode, dstNew uint16, srcOld uint16, n uint16) {
+	for i := uint16(0); i < n; i++ {
+		dst, src := dstNew+i, srcOld+i
+		nodeAppendKV(new, dst, old.getPtr(src), old.getKey(src), old.getVal(src))
+	}
+}
+
+func leafInsert(new BNode, old BNode, idx uint16, key []byte, val []byte) {
+	new.setHeader(BNODE_LEAF, old.nkeys()+1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendKV(new, idx, 0, key, val)
+	nodeAppendRange(new, old, idx+1, idx, old.nkeys()-idx)
+}
+
+func leafUpdate(new BNode, old BNode, idx uint16, key []byte, val []byte) {
+	new.setHeader(BNODE_LEAF, old.nkeys())
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendKV(new, idx, 0, key, val)
+	nodeAppendRange(new, old, idx+1, idx+1, old.nkeys()-idx-1)
+}
+
+func main() {
+	// Copy-on-write means no inplace updates; updates create new nodes instead.
+	// Example 1, node {"k1":"hi", "k2":"a", "k3":"hello"} is updated with "k2":"b":
+	old := BNode(make([]byte, BTREE_PAGE_SIZE))
+	old.setHeader(BNODE_LEAF, 2)
+	nodeAppendKV(old, 0, 0, []byte("k1"), []byte("hi"))
+	nodeAppendKV(old, 1, 0, []byte("k2"), []byte("hello"))
+
+	new := BNode(make([]byte, BTREE_PAGE_SIZE))
+	new.setHeader(BNODE_LEAF, 2)
+	nodeAppendKV(new, 0, 0, old.getKey(0), old.getVal(0))
+	nodeAppendKV(new, 1, 0, []byte("k2"), []byte("b"))
+	nodeAppendKV(new, 2, 0, old.getKey(2), old.getVal(2))
 }
